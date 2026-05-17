@@ -246,12 +246,16 @@ gcloud compute firewall-rules create allow-rum-backend \
 ### Configure Allowed Tracing URLs in Datadog UI
 
 1. Navigate to **Digital Experience → Manage Applications → your app → SDK Configuration**
-2. Under **Allowed Tracing URLs**, click **Add URL**
-3. Set:
-   - **URL**: `http://35.241.69.52:8000` (or enable Regex: `http://35\.241\.69\.52:8000.*`)
-   - **Propagator Type**: `datadog` (add `tracecontext` as well if needed)
-4. Ensure a **service name** is set in App Attributes (required for tracing)
-5. Click **Save Changes** — propagates in ~30 seconds
+2. Scroll to the **Allowed Tracing URLs** section and click **Add URL**
+3. **Toggle on the Regex switch** next to the URL field (important — without this, the value is treated as an exact string match and dots in the IP are not escaped)
+4. Enter the regex pattern in the URL field:
+   ```
+   http://35\.241\.69\.52:8000.*
+   ```
+   > Dots in the IP must be escaped as `\.` in regex. The trailing `.*` matches all paths under that origin (`/api/ping`, `/api/slow`, etc.).
+5. Set **Propagator Type** to `datadog`
+6. Ensure a **service name** is configured in the **App Attributes** section (required for APM linking — tracing will not work without it)
+7. Click **Save Changes** — configuration propagates to the Apache module in ~30 seconds via Remote Configuration
 
 ### Verify correlation
 
