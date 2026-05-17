@@ -261,6 +261,9 @@ gcloud compute firewall-rules create allow-rum-backend \
 
 ### Verify correlation
 
+<img width="1632" height="936" alt="image" src="https://github.com/user-attachments/assets/a2643cd9-7f63-43b4-bfe2-bfb298e7eb81" />
+
+
 1. Open `http://35.241.69.52/` in Chrome
 2. Click **Ping**, **Slow Request**, or **Trigger 500** in the RUM <> APM panel
 3. In Datadog, open the RUM session → click the resource/fetch call → you should see a **View Trace** button linking to the backend APM span
