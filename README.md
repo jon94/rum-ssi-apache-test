@@ -245,6 +245,8 @@ gcloud compute firewall-rules create allow-rum-backend \
 
 ### Configure Allowed Tracing URLs in Datadog UI
 
+<img width="1347" height="728" alt="image" src="https://github.com/user-attachments/assets/b667fbcf-d6b6-49e1-8e54-baa51bf92f5b" />
+
 1. Navigate to **Digital Experience → Manage Applications → your app → SDK Configuration**
 2. Scroll to the **Allowed Tracing URLs** section and click **Add URL**
 3. **Toggle on the Regex switch** next to the URL field (important — without this, the value is treated as an exact string match and dots in the IP are not escaped)
