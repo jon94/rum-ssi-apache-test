@@ -194,7 +194,74 @@ After clicking **Save Changes** in the Datadog UI, changes propagate to the Apac
 
 ---
 
-## 8. Troubleshooting
+## 8. RUM <> APM Correlation
+
+The demo includes a Python Flask backend instrumented with `ddtrace` to test end-to-end trace correlation.
+
+### Install and run the backend
+
+```bash
+# Install ddtrace globally (must use sudo so systemd can find the binary)
+sudo pip3 install ddtrace flask flask-cors
+
+# Copy files to the VM
+gcloud compute scp backend/app.py backend/rum-backend.service rum-apache-demo:/tmp/ \
+  --zone=asia-east2-a --tunnel-through-iap
+
+# Deploy
+gcloud compute ssh rum-apache-demo --zone=asia-east2-a --tunnel-through-iap --command="
+  sudo mkdir -p /opt/rum-backend &&
+  sudo cp /tmp/app.py /opt/rum-backend/app.py &&
+  sudo cp /tmp/rum-backend.service /etc/systemd/system/rum-backend.service &&
+  sudo systemctl daemon-reload &&
+  sudo systemctl enable rum-backend &&
+  sudo systemctl start rum-backend
+"
+```
+
+> **Gotcha — port 5000 is taken by the Datadog Agent**: The Agent's debug/telemetry endpoint listens on port 5000. Running Flask on port 5000 conflicts. Use port 8000 (already set in `app.py` and the service file).
+
+> **Gotcha — ddtrace-run path**: Install with `sudo pip3` so the binary lands at `/usr/local/bin/ddtrace-run`, accessible by the root systemd service. A user-level install (`pip3` without sudo) puts it at `~/.local/bin/ddtrace-run` which root cannot execute (systemd exit code 203/EXEC).
+
+### Open firewall for port 8000
+
+```bash
+gcloud compute firewall-rules create allow-rum-backend \
+  --direction=INGRESS \
+  --action=ALLOW \
+  --rules=tcp:8000 \
+  --source-ranges=<YOUR_IP>/32 \
+  --target-tags=http-server \
+  --description="RUM APM demo backend port 8000"
+```
+
+### Backend endpoints
+
+| Endpoint | Behaviour |
+|---|---|
+| `GET /api/ping` | Returns immediately with `{"status":"ok"}` |
+| `GET /api/slow` | Sleeps 400–1200ms (random), simulates latency |
+| `GET /api/error` | Raises `RuntimeError`, returns HTTP 500 |
+
+### Configure Allowed Tracing URLs in Datadog UI
+
+1. Navigate to **Digital Experience → Manage Applications → your app → SDK Configuration**
+2. Under **Allowed Tracing URLs**, click **Add URL**
+3. Set:
+   - **URL**: `http://35.241.69.52:8000` (or enable Regex: `http://35\.241\.69\.52:8000.*`)
+   - **Propagator Type**: `datadog` (add `tracecontext` as well if needed)
+4. Ensure a **service name** is set in App Attributes (required for tracing)
+5. Click **Save Changes** — propagates in ~30 seconds
+
+### Verify correlation
+
+1. Open `http://35.241.69.52/` in Chrome
+2. Click **Ping**, **Slow Request**, or **Trigger 500** in the RUM <> APM panel
+3. In Datadog, open the RUM session → click the resource/fetch call → you should see a **View Trace** button linking to the backend APM span
+
+---
+
+## 9. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -205,3 +272,7 @@ After clicking **Save Changes** in the Datadog UI, changes propagate to the Apac
 | User Name `undefined` in `DD_RUM.getUser()` | Cookie is URL-encoded; regex cannot match | Clear `dd_user` cookie, reload page, re-verify |
 | SSH connection timeout | No SSH firewall rule or rule restricted to wrong IP | Use `--tunnel-through-iap` flag with `gcloud compute ssh` |
 | HTTP 403/no response from VM IP | Firewall `source-ranges` set to `0.0.0.0/32` instead of your IP | `gcloud compute firewall-rules update default-allow-http --source-ranges=<YOUR_IP>/32` |
+| Backend service exit code 203/EXEC | `ddtrace-run` installed as user, not root — systemd can't find it | `sudo pip3 install ddtrace` then verify with `sudo which ddtrace-run` |
+| Backend service exit code 1/FAILURE, `Address already in use` | Port 5000 taken by Datadog Agent debug endpoint | Use port 8000; avoid `fuser -k 5000/tcp` (kills the Agent) |
+| Fetch calls from browser fail with CORS error | Backend missing CORS headers | `flask-cors` must be installed and `CORS(app)` called in `app.py` |
+| No trace link on RUM resource | Allowed Tracing URL not configured or service name missing | Add URL in SDK Configuration and set a service name in App Attributes |

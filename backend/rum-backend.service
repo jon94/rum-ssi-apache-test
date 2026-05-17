@@ -1,0 +1,18 @@
+[Unit]
+Description=RUM APM Demo Backend
+After=network.target datadog-agent.service
+
+[Service]
+User=root
+WorkingDirectory=/opt/rum-backend
+Environment=DD_SERVICE=rum-demo-backend
+Environment=DD_ENV=demo
+Environment=DD_VERSION=1.0.0
+Environment=DD_AGENT_HOST=localhost
+Environment=DD_TRACE_AGENT_PORT=8126
+ExecStart=/usr/local/bin/ddtrace-run python3 /opt/rum-backend/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -191,6 +191,62 @@ please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the
     .card h3   { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
     .card p    { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
 
+    /* ── Backend panel ──────────────────────────────────────────── */
+    .backend-panel {
+      max-width: 960px;
+      margin: 0 auto 2rem;
+      padding: 0 2rem;
+    }
+
+    .backend-panel h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 0.75rem;
+    }
+
+    .backend-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .backend-card p {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 1rem;
+    }
+
+    .backend-card p code {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.75rem;
+      color: #a5b4fc;
+    }
+
+    .backend-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+    #response-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      font-family: monospace;
+      color: #94a3b8;
+      min-height: 2.5rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    #response-box.ok    { border-color: #22c55e; color: #86efac; }
+    #response-box.error { border-color: #ef4444; color: #fca5a5; }
+
     /* ── Toast ──────────────────────────────────────────────────── */
     #toast {
       position: fixed; bottom: 1.5rem; right: 1.5rem;
@@ -223,6 +279,24 @@ please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the
       <!-- populated by renderUserCard() -->
     </div>
     <div class="user-switcher" id="user-switcher"></div>
+  </div>
+
+  <!-- ── Backend / APM correlation panel ─────────────────────── -->
+  <div class="backend-panel">
+    <h2>RUM &lt;&gt; APM Correlation</h2>
+    <div class="backend-card">
+      <p>
+        Calls go to <code>http://35.241.69.52:8000</code> — add that as an
+        <strong>Allowed Tracing URL</strong> in the Datadog UI so the RUM SDK
+        injects trace headers and links sessions to backend APM spans.
+      </p>
+      <div class="backend-actions">
+        <button class="btn-primary"   onclick="backendCall('/api/ping')">Ping</button>
+        <button class="btn-warn"      onclick="backendCall('/api/slow')">Slow Request</button>
+        <button class="btn-danger"    onclick="backendCall('/api/error')">Trigger 500</button>
+      </div>
+      <div id="response-box">Response will appear here...</div>
+    </div>
   </div>
 
   <!-- ── Hero ─────────────────────────────────────────────────── -->
@@ -324,6 +398,28 @@ please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the
       var start = Date.now();
       while (Date.now() - start < 800) {}
       showToast("Slow action done (" + (Date.now() - start) + "ms)");
+    }
+
+    // ── Backend fetch (RUM <> APM correlation) ────────────────────
+    var BACKEND = "http://35.241.69.52:8000";
+
+    function backendCall(path) {
+      var box = document.getElementById("response-box");
+      box.className = "";
+      box.textContent = "Fetching " + path + "...";
+      var start = Date.now();
+      fetch(BACKEND + path)
+        .then(function(res) {
+          return res.json().then(function(body) {
+            var ms = Date.now() - start;
+            box.className = res.ok ? "ok" : "error";
+            box.textContent = "HTTP " + res.status + " (" + ms + "ms)\n" + JSON.stringify(body, null, 2);
+          });
+        })
+        .catch(function(err) {
+          box.className = "error";
+          box.textContent = "Fetch failed: " + err.message;
+        });
     }
 
     function triggerError() {
