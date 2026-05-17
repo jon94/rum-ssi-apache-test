@@ -1,0 +1,336 @@
+
+please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the_tcp_upload_bandwidth
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartOne RUM Demo</title>
+
+  <!-- ============================================================
+       Datadog RUM User Attributes — exposed via three source types
+       so you can point the Datadog UI at whichever you prefer.
+
+       1. JavaScript  → window.currentUser.id / .name / .email
+       2. Cookie      → "dd_user" (JSON-encoded, e.g. extract with regex)
+       3. DOM         → #user-id / #user-name / #user-email
+  ============================================================ -->
+  <script>
+    // ── Mock user roster ──────────────────────────────────────────
+    var USERS = [
+      { id: "usr_001", name: "Jonathan Lim",  email: "jonathan.lim@smartone.com.hk"  },
+      { id: "usr_002", name: "Alice Chan",    email: "alice.chan@smartone.com.hk"    },
+      { id: "usr_003", name: "Bob Ng",        email: "bob.ng@smartone.com.hk"        }
+    ];
+
+    // ── Source 1: JavaScript variable ─────────────────────────────
+    // Configure in Datadog UI:
+    //   User ID    → JavaScript → window.currentUser.id
+    //   User Name  → JavaScript → window.currentUser.name
+    //   User Email → JavaScript → window.currentUser.email
+    window.currentUser = USERS[0];
+
+    // ── Source 2: Cookie ──────────────────────────────────────────
+    // Configure in Datadog UI:
+    //   User ID    → Cookie → dd_user   (with regex: "id":"([^"]+)")
+    //   User Name  → Cookie → dd_user   (with regex: "name":"([^"]+)")
+    //   User Email → Cookie → dd_user   (with regex: "email":"([^"]+)")
+    function setUserCookie(user) {
+      var val = JSON.stringify({ id: user.id, name: user.name, email: user.email });
+      document.cookie = "dd_user=" + val + "; path=/; max-age=86400";
+    }
+    setUserCookie(USERS[0]);
+
+    // ── Source 3: DOM ─────────────────────────────────────────────
+    // Configure in Datadog UI:
+    //   User ID    → DOM → #user-id
+    //   User Name  → DOM → #user-name
+    //   User Email → DOM → #user-email
+    function updateDom(user) {
+      var el;
+      el = document.getElementById("user-id");    if (el) el.textContent = user.id;
+      el = document.getElementById("user-name");  if (el) el.textContent = user.name;
+      el = document.getElementById("user-email"); if (el) el.textContent = user.email;
+    }
+
+    function switchUser(index) {
+      var user = USERS[index];
+      window.currentUser = user;
+      setUserCookie(user);
+      updateDom(user);
+      renderUserCard(user);
+      showToast("Switched to " + user.name);
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1   { font-size: 1.25rem; font-weight: 600; color: #f8fafc; }
+    header span { font-size: 0.75rem; background: #7c3aed; color: #fff; padding: 0.2rem 0.6rem; border-radius: 999px; }
+
+    /* ── User panel ─────────────────────────────────────────────── */
+    .user-panel {
+      max-width: 960px;
+      margin: 2rem auto 0;
+      padding: 0 2rem;
+    }
+
+    .user-panel h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 0.75rem;
+    }
+
+    .user-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .avatar {
+      width: 44px; height: 44px;
+      background: #6366f1;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1rem; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .user-meta { flex: 1; min-width: 180px; }
+    .user-meta strong { display: block; font-size: 0.95rem; }
+    .user-meta small  { color: #64748b; font-size: 0.8rem; }
+
+    .attr-table { font-size: 0.78rem; border-collapse: collapse; }
+    .attr-table td { padding: 0.2rem 0.75rem 0.2rem 0; vertical-align: top; }
+    .attr-table td:first-child { color: #64748b; white-space: nowrap; }
+    .attr-table code {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.75rem;
+      color: #a5b4fc;
+    }
+
+    .user-switcher { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+    .user-switcher button {
+      padding: 0.4rem 0.9rem;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .user-switcher button:hover { border-color: #6366f1; }
+    .user-switcher button.active { border-color: #6366f1; color: #a5b4fc; background: #1e293b; }
+
+    /* hidden DOM attribute carriers */
+    #user-id, #user-name, #user-email { display: none; }
+
+    /* ── Hero ───────────────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 3rem 2rem 2rem;
+    }
+    .hero h2 {
+      font-size: 2.5rem; font-weight: 700;
+      background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 1rem;
+    }
+    .hero p { color: #94a3b8; max-width: 480px; margin: 0 auto 2rem; line-height: 1.6; }
+
+    .actions { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 3rem; }
+
+    button { padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: opacity 0.15s; }
+    button:hover { opacity: 0.85; }
+    .btn-primary   { background: #6366f1; color: #fff; }
+    .btn-secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+    .btn-danger    { background: #ef4444; color: #fff; }
+    .btn-warn      { background: #f59e0b; color: #1e293b; }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+    .card:hover { border-color: #6366f1; transform: translateY(-2px); }
+    .card-icon { font-size: 2rem; margin-bottom: 0.75rem; }
+    .card h3   { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .card p    { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      padding: 0.75rem 1.25rem; font-size: 0.85rem; color: #e2e8f0;
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none; max-width: 280px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>SmartOne Portal</h1>
+    <span>RUM Demo</span>
+  </header>
+
+  <!-- ── User attribute carriers (DOM source) ─────────────────── -->
+  <!-- Configure in Datadog UI → DOM → #user-id / #user-name / #user-email -->
+  <span id="user-id">usr_001</span>
+  <span id="user-name">Jonathan Lim</span>
+  <span id="user-email">jonathan.lim@smartone.com.hk</span>
+
+  <!-- ── User panel ────────────────────────────────────────────── -->
+  <div class="user-panel">
+    <h2>Active User Session</h2>
+    <div class="user-card" id="user-card">
+      <!-- populated by renderUserCard() -->
+    </div>
+    <div class="user-switcher" id="user-switcher"></div>
+  </div>
+
+  <!-- ── Hero ─────────────────────────────────────────────────── -->
+  <section class="hero">
+    <h2>Welcome Back</h2>
+    <p>Interact with the page below to generate Real User Monitoring events for Datadog.</p>
+    <div class="actions">
+      <button class="btn-primary"   onclick="triggerAction('page_view')">Page View</button>
+      <button class="btn-secondary" onclick="triggerAction('custom_event')">Custom Event</button>
+      <button class="btn-warn"      onclick="triggerSlowAction()">Slow Action</button>
+      <button class="btn-danger"    onclick="triggerError()">Trigger Error</button>
+    </div>
+  </section>
+
+  <div class="cards">
+    <div class="card" onclick="triggerAction('dashboard_click')">
+      <div class="card-icon">📊</div>
+      <h3>Dashboard</h3>
+      <p>View real-time analytics and performance metrics.</p>
+    </div>
+    <div class="card" onclick="triggerAction('reports_click')">
+      <div class="card-icon">📋</div>
+      <h3>Reports</h3>
+      <p>Generate and export business intelligence reports.</p>
+    </div>
+    <div class="card" onclick="triggerAction('settings_click')">
+      <div class="card-icon">⚙️</div>
+      <h3>Settings</h3>
+      <p>Manage user preferences and account configuration.</p>
+    </div>
+    <div class="card" onclick="triggerAction('alerts_click')">
+      <div class="card-icon">🔔</div>
+      <h3>Alerts</h3>
+      <p>Configure threshold alerts and notification rules.</p>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    var _activeIndex = 0;
+
+    function initials(name) {
+      return name.split(" ").map(function(p){ return p[0]; }).join("").toUpperCase();
+    }
+
+    function renderUserCard(user) {
+      document.getElementById("user-card").innerHTML =
+        '<div class="avatar">' + initials(user.name) + '</div>' +
+        '<div class="user-meta">' +
+          '<strong>' + user.name + '</strong>' +
+          '<small>' + user.email + '</small>' +
+        '</div>' +
+        '<table class="attr-table">' +
+          '<tr><td>JS</td><td><code>window.currentUser.id</code> = ' + user.id + '</td></tr>' +
+          '<tr><td>Cookie</td><td><code>dd_user</code> (JSON, use regex to extract)</td></tr>' +
+          '<tr><td>DOM</td><td><code>#user-id</code> / <code>#user-name</code> / <code>#user-email</code></td></tr>' +
+        '</table>';
+    }
+
+    function renderSwitcher() {
+      var sw = document.getElementById("user-switcher");
+      sw.innerHTML = "";
+      USERS.forEach(function(u, i) {
+        var btn = document.createElement("button");
+        btn.textContent = u.name;
+        if (i === _activeIndex) btn.classList.add("active");
+        btn.onclick = function() {
+          _activeIndex = i;
+          switchUser(i);
+          document.querySelectorAll(".user-switcher button").forEach(function(b, j){
+            b.classList.toggle("active", j === i);
+          });
+        };
+        sw.appendChild(btn);
+      });
+    }
+
+    // initialise on DOM ready
+    renderUserCard(USERS[0]);
+    updateDom(USERS[0]);
+    renderSwitcher();
+
+    // ── RUM event helpers ─────────────────────────────────────────
+    function showToast(msg) {
+      var t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      setTimeout(function(){ t.classList.remove("show"); }, 2500);
+    }
+
+    function triggerAction(name) {
+      console.log("[RUM] action:", name, "user:", window.currentUser.id);
+      showToast("Action: " + name);
+    }
+
+    function triggerSlowAction() {
+      showToast("Simulating slow action...");
+      var start = Date.now();
+      while (Date.now() - start < 800) {}
+      showToast("Slow action done (" + (Date.now() - start) + "ms)");
+    }
+
+    function triggerError() {
+      console.error("[RUM] intentional error — user:", window.currentUser.id);
+      showToast("Error thrown — check RUM");
+      setTimeout(function(){ throw new Error("Intentional RUM test error"); }, 50);
+    }
+  </script>
+</body>
+</html>
